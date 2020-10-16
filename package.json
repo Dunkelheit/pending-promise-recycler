@@ -1,0 +1,57 @@
+{
+  "name": "pending-promise-recycler",
+  "version": "0.1.0",
+  "description": "Save precious resources and avoid performing the same operation twice by recycling pending promises",
+  "main": "index.js",
+  "scripts": {
+    "jsdoc": "jsdoc -a all -c jsdoc.json -r -R README.md index.js -d docs/jsdoc",
+    "lint": "npx eslint index.js index.test.js --fix",
+    "test": "nyc mocha index.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dunkelheit/pending-promise-recycler.git"
+  },
+  "keywords": [
+    "pending",
+    "promise",
+    "recycle"
+  ],
+  "author": "Arturo Martinez (https://github.com/dunkelheit)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Dunkelheit/pending-promise-recycler/issues"
+  },
+  "homepage": "https://github.com/Dunkelheit/pending-promise-recycler#readme",
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "chai-as-promised": "^7.1.1",
+    "docdash": "^1.2.0",
+    "eslint": "^7.11.0",
+    "husky": "^4.3.0",
+    "jsdoc": "^3.6.6",
+    "mocha": "^8.1.3",
+    "nyc": "^15.1.0",
+    "rewire": "^5.0.0",
+    "sinon": "^9.2.0",
+    "sinon-chai": "^3.5.0"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm run lint",
+      "pre-push": "npm run test"
+    }
+  },
+  "nyc": {
+    "include": [
+      "index.js"
+    ],
+    "exclude": [],
+    "all": true,
+    "reporter": [
+      "text",
+      "text-summary",
+      "lcov"
+    ]
+  }
+}
