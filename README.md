@@ -68,6 +68,8 @@ const recycle = require('pending-promise-recycler');
 const recyclableFunc = recycle(func, {});
 ``` 
 
+### Identifying recyclable promises
+
 The internal registry where recyclable promises are stored needs to identify them somehow, by default functions will
 be uniquely identified by their function name and their arguments, but it is **strongly recommended to use a custom
 key builder** to make sure your recycling needs are met. This can be done as follows: 
