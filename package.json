@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Save precious resources and avoid performing the same operation twice by recycling pending promises",
   "main": "index.js",
+  "engines": {
+    "node": ">=12"
+  },
   "scripts": {
     "jsdoc": "jsdoc -a all -c jsdoc.json -r -R README.md index.js -d docs/jsdoc",
     "lint": "npx eslint index.js index.test.js --fix",
