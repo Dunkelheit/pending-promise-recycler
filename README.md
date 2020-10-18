@@ -88,7 +88,7 @@ const moreFineTunedRecyclableFetch = recycle(fetchSomethingExpensive, {
 });
 ``` 
 
-### Example
+## Example
 
 See [example.js](./example.js) for a working example with a recyclable function that fetches data from an
 http server.
