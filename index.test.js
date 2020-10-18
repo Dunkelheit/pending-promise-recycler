@@ -74,14 +74,16 @@ describe('pending-promise-recycler', () => {
 
         it('Executes an asynchronous function twice, relying on the registry run just one promise', async () => {
             const registry = getRegistry();
-            const spy = sinon.spy(registry, 'get');
+            const registryGetSpy = sinon.spy(registry, 'get');
             const func = testFunctionBuilder('a');
-            const cachedFunc = recycle(func);
+            const funcSpy = sinon.spy(func);
+            const cachedFunc = recycle(funcSpy);
             const [promiseA, promiseB] = await Promise.all([
                 cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
                 cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
             ]);
-            expect(spy).to.be.calledOnce;
+            expect(registryGetSpy).to.be.calledOnce;
+            expect(funcSpy).to.be.calledOnce;
             expect(registry).to.be.empty;
             expect(promiseA).to.equal('Why hello there');
             expect(promiseB).to.equal('Why hello there');
