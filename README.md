@@ -121,12 +121,6 @@ There is also a linter task:
 > npm run lint
 ```
 
-JSDoc documentation can be generated as follows:
-
-```
-> npm run jsdoc
-```
-
 ## Contributing
 
 GitHub issues are the preferred way to report problems or make requests for new functionality. This is a PR-friendly
