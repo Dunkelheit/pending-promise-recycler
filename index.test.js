@@ -49,18 +49,18 @@ describe('pending-promise-recycler', () => {
 
     describe('Basic usage', () => {
 
-        it('Executes an asynchronous function once', async () => {
+        it('Executes a promise function once', async () => {
             function beforeResolving() {
                 const registry = getRegistry();
-                expect(registry).to.have.keys('a-lorem-ipsum-dolor sit amet');
-                const p = registry.get('a-lorem-ipsum-dolor sit amet');
+                expect(registry).to.have.keys('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
+                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
                 expect(p).to.be.a('promise');
                 expect(util.format('%s', p)).to.be.equal('Promise { <pending> }');
             }
             function afterResolving() {
                 const registry = getRegistry();
-                expect(registry).to.have.keys('a-lorem-ipsum-dolor sit amet');
-                const p = registry.get('a-lorem-ipsum-dolor sit amet');
+                expect(registry).to.have.keys('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
+                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
                 expect(p).to.be.a('promise');
                 expect(util.format('%s', p)).to.be.equal('Promise { \'Why hello there\' }');
             }
@@ -72,7 +72,7 @@ describe('pending-promise-recycler', () => {
             expect(result).to.equal('Why hello there');
         });
 
-        it('Executes an asynchronous function twice, relying on the registry run just one promise', async () => {
+        it('Executes a fulfilled promise function twice, recycling the promise itself', async () => {
             const registry = getRegistry();
             const registryGetSpy = sinon.spy(registry, 'get');
             const func = testFunctionBuilder('a');
@@ -88,6 +88,25 @@ describe('pending-promise-recycler', () => {
             expect(promiseA).to.equal('Why hello there');
             expect(promiseB).to.equal('Why hello there');
         });
+
+        it('Executes a rejected promise function twice, recycling the promise itself', async () => {
+            const registry = getRegistry();
+            const registryGetSpy = sinon.spy(registry, 'get');
+            const func = testFunctionBuilder('a', { isResolved: false });
+            const funcSpy = sinon.spy(func);
+            const cachedFunc = recycle(funcSpy);
+            const [promiseA, promiseB] = await Promise.allSettled([
+                cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
+                cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
+            ]);
+            expect(registryGetSpy).to.be.calledOnce;
+            expect(funcSpy).to.be.calledOnce;
+            expect(registry).to.be.empty;
+            expect(promiseA).to.have.property('status', 'rejected');
+            expect(promiseA).to.have.property('reason', 'Why hello there');
+            expect(promiseB).to.have.property('status', 'rejected');
+            expect(promiseB).to.have.property('reason', 'Why hello there');
+        });
     });
 
     describe('Error handling', () => {
@@ -95,15 +114,15 @@ describe('pending-promise-recycler', () => {
         it('Handles rejected promises, making sure the registry stays clean', async () => {
             function beforeResolving() {
                 const registry = getRegistry();
-                expect(registry).to.have.keys('a-lorem-ipsum-dolor sit amet');
-                const p = registry.get('a-lorem-ipsum-dolor sit amet');
+                expect(registry).to.have.keys('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
+                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
                 expect(p).to.be.a('promise');
                 expect(util.format('%s', p)).to.be.equal('Promise { <pending> }');
             }
             function afterResolving() {
                 const registry = getRegistry();
-                expect(registry).to.have.keys('a-lorem-ipsum-dolor sit amet');
-                const p = registry.get('a-lorem-ipsum-dolor sit amet');
+                expect(registry).to.have.keys('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
+                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
                 expect(p).to.be.a('promise');
             }
             const spy = sinon.spy(testFunctionBuilder('a', {
@@ -155,7 +174,9 @@ describe('pending-promise-recycler', () => {
         it('Works with anonymous functions', async () => {
             function beforeResolving() {
                 const registry = getRegistry();
-                expect(registry).to.have.keys('anonymous-lorem');
+                expect(registry).to.have.keys(
+                    'anonymous-0d0491105dd08721e0911939ca184e9e5a6f924b00dce27a4163ca333049bf20'
+                );
             }
             const spy = sinon.spy(testFunctionBuilder('', { beforeResolving }));
             const cachedFunc = recycle(spy);
@@ -163,6 +184,46 @@ describe('pending-promise-recycler', () => {
             expect(getRegistry()).to.be.empty;
             expect(spy).to.be.calledOnceWithExactly('lorem');
             expect(result).to.equal('Why hello there');
+        });
+    });
+
+    describe('Error handling', () => {
+
+        it('Handles promises that cause a TypeError', async () => {
+            const func = () => {
+                return new Promise(resolve => {
+                    const hmmm = ''[0][0];
+                    resolve(hmmm);
+                });
+            };
+            const spy = sinon.spy(func);
+            const cachedFunc = recycle(spy);
+            await expect(cachedFunc()).to.be.rejected;
+            expect(getRegistry()).to.be.empty;
+        });
+
+        it('Handles promises that throw an unhandled rejection error', async () => {
+            const err = new Error('Something went wrong!');
+            const func = () => {
+                return new Promise(() => {
+                    throw err;
+                });
+            };
+            const spy = sinon.spy(func);
+            const cachedFunc = recycle(spy);
+            await expect(cachedFunc()).to.be.rejectedWith(err);
+            expect(getRegistry()).to.be.empty;
+        });
+
+        it('Handles async functions that throw an unhandled rejection error', async () => {
+            const err = new Error('Something went wrong!');
+            const func = async () => {
+                throw err;
+            };
+            const spy = sinon.spy(func);
+            const cachedFunc = recycle(spy);
+            await expect(cachedFunc()).to.be.rejectedWith(err);
+            expect(getRegistry()).to.be.empty;
         });
     });
 });

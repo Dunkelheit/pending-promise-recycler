@@ -1,9 +1,11 @@
 'use strict';
 
+const crypto = require('crypto');
+
 const registry = new Map();
 
 function defaultKeyBuilder(func, ...args) {
-    return `${func.name || 'anonymous'}-${args.join('-')}`;
+    return `${func.name || 'anonymous'}-${crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
 }
 
 const defaultOptions = {
