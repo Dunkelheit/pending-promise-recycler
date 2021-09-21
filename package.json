@@ -1,6 +1,6 @@
 {
   "name": "pending-promise-recycler",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Save precious resources and avoid performing the same operation twice by recycling pending promises",
   "main": "index.js",
   "engines": {
@@ -26,15 +26,15 @@
   },
   "homepage": "https://github.com/Dunkelheit/pending-promise-recycler#readme",
   "devDependencies": {
-    "chai": "^4.2.0",
+    "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
-    "eslint": "^7.18.0",
-    "husky": "^4.3.8",
-    "mocha": "^8.2.1",
+    "eslint": "^7.32.0",
+    "husky": "^7.0.2",
+    "mocha": "^9.1.1",
     "nyc": "^15.1.0",
     "rewire": "^5.0.0",
-    "sinon": "^9.2.4",
-    "sinon-chai": "^3.5.0"
+    "sinon": "^11.1.2",
+    "sinon-chai": "^3.7.0"
   },
   "husky": {
     "hooks": {
