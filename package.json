@@ -1,6 +1,6 @@
 {
   "name": "pending-promise-recycler",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Save precious resources and avoid performing the same operation twice by recycling pending promises",
   "type": "module",
   "main": "dist/index.js",
