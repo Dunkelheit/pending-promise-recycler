@@ -1,12 +1,10 @@
-'use strict';
+import http from 'node:http';
 
-const http = require('http');
-
-const recycle = require('./index');
+import recycle from './src/index.js';
 
 const log = console.log;
 
-const server = http.createServer((req, res) => {
+const server = http.createServer((_req, res) => {
     log('[server] Incoming request... delaying response by 1200 ms.');
     setTimeout(() => {
         log('[server] Responding!');
@@ -15,7 +13,7 @@ const server = http.createServer((req, res) => {
     }, 1200);
 });
 
-async function get() {
+async function get(): Promise<string> {
     return new Promise((resolve, reject) => {
         log('[client] Fetching...');
         http.get('http://localhost:8000', res => {
@@ -36,7 +34,7 @@ async function get() {
 
 server.listen(8000);
 
-(async function() {
+(async function () {
     const recyclableGet = recycle(get, {
         keyBuilder: 'get-foo-bar'
     });
