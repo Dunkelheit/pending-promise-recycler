@@ -4,12 +4,15 @@
   "description": "Save precious resources and avoid performing the same operation twice by recycling pending promises",
   "type": "module",
   "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
   "types": "./dist/esm/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/esm/index.d.ts",
       "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js"
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
     }
   },
   "files": [
@@ -20,9 +23,12 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc && tsc -p tsconfig.cjs.json && printf '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
-    "lint": "eslint src --fix",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build && npm test",
     "prepare": "husky"
   },
   "repository": {
@@ -30,9 +36,15 @@
     "url": "git+https://github.com/Dunkelheit/pending-promise-recycler.git"
   },
   "keywords": [
+    "async",
+    "coalescing",
+    "concurrent",
+    "deduplication",
+    "memoize",
     "pending",
     "promise",
-    "recycle"
+    "recycle",
+    "typescript"
   ],
   "author": "Arturo Martinez (https://github.com/dunkelheit)",
   "license": "MIT",
