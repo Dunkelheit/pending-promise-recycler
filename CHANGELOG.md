@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-03-14
+### Changed
+- Migrate ESLint configuration from the legacy eslintrc format (`.eslintrc.json`) to the
+  modern flat config format (`eslint.config.js`), as required by ESLint v9.
+- Upgrade `eslint` from v8 to v9.
+- Replace separate `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` packages
+  with the unified `typescript-eslint` package.
+- Add `@eslint/js` and `globals` packages to support the flat config format.
+
 ## [0.4.0] - 2026-03-13
 ### Added
 - Per-instance registry: each call to `recycle()` now maintains its own internal registry,
