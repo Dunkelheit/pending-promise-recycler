@@ -1,0 +1,84 @@
+name: Bug report
+description: Something is not working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug! Please fill in as many fields as
+        possible to help us reproduce and fix the issue quickly.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+      placeholder: "When I call recycle() with option X, the function is invoked twice instead of once."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: |
+        Please provide the **smallest possible code snippet** that reproduces the problem.
+        Ideally a self-contained TypeScript/JavaScript snippet that can be run directly.
+      render: typescript
+      placeholder: |
+        import recycle from 'pending-promise-recycler';
+
+        const fn = () => new Promise(resolve => setTimeout(() => resolve('ok'), 100));
+        const recyclable = recycle(fn, { /* ... */ });
+
+        // Trigger the bug here
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What actually happened? Include any error messages or stack traces.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: pending-promise-recycler version
+      placeholder: "0.4.1"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      placeholder: "22.14.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.3, Ubuntu 24.04, Windows 11, …"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context that might be relevant (related issues, environment quirks, etc.).
+    validations:
+      required: false

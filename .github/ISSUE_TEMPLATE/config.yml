@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/Dunkelheit/pending-promise-recycler/discussions
+    about: For questions, usage help, or general discussion, please use GitHub Discussions.

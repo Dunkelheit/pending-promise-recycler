@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-03-14
+### Added
+- `CLAUDE.md`: guidance for Claude AI agents covering architecture, commands, code
+  conventions, testing patterns, and explicit constraints.
+- `AGENTS.md`: equivalent guidance for all AI coding agents (Copilot, Codex, Cursor, etc.).
+- `.github/CONTRIBUTING.md`: comprehensive contribution guide replacing the brief paragraph
+  in the README — covers prerequisites, dev workflow, coding standards, test conventions,
+  Conventional Commits format, and the PR process.
+- `.github/ISSUE_TEMPLATE/bug_report.yml`: structured GitHub Forms bug report template.
+- `.github/ISSUE_TEMPLATE/feature_request.yml`: structured GitHub Forms feature request
+  template with an enforced zero-dependency checklist.
+- `.github/ISSUE_TEMPLATE/config.yml`: disables blank issues and redirects questions to
+  GitHub Discussions.
+- `.github/PULL_REQUEST_TEMPLATE.md`: PR checklist covering typecheck, lint, tests,
+  zero-dep constraint, and changelog hygiene.
+- `SECURITY.md`: vulnerability disclosure policy with supported versions table and
+  private reporting instructions.
+- `.editorconfig`: enforces 4-space indent, LF line endings, UTF-8, and trailing-whitespace
+  trimming across all editors and IDEs.
+- `.github/CODEOWNERS`: auto-assigns `@Dunkelheit` as reviewer on every pull request.
+
 ## [0.4.1] - 2026-03-14
 ### Changed
 - Migrate ESLint configuration from the legacy eslintrc format (`.eslintrc.json`) to the

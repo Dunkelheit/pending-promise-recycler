@@ -1,0 +1,62 @@
+name: Feature request
+description: Suggest an idea or enhancement for pending-promise-recycler
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement! Before opening this request, please
+        check whether an existing issue or discussion already covers your use case.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: |
+        What problem are you trying to solve, or what limitation are you running into?
+        A concrete use case is more persuasive than an abstract description.
+      placeholder: "I often need to … but currently I have to …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: |
+        Describe the change or addition you would like to see, including any proposed
+        API shape if relevant.
+      render: typescript
+      placeholder: |
+        // Example of how the new API might look:
+        const recyclable = recycle(fn, { newOption: true });
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Have you considered any alternative approaches? Why are they insufficient?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Compatibility checklist
+      description: Please confirm that the proposed feature respects the library's design goals.
+      options:
+        - label: The feature adds no runtime dependencies (the library must stay dependency-free).
+          required: true
+        - label: The feature does not introduce shared global/module-level mutable state.
+          required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Links, benchmarks, prior art, or any other relevant information.
+    validations:
+      required: false
