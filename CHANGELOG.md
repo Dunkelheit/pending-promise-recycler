@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-03-14
+### Changed
+- Refactored `src/index.ts` for readability and elegance: collapsed the
+  `isNonSerializable` predicate into a single boolean expression, trimmed its JSDoc,
+  removed a redundant inline comment in `defaultKeyBuilder`, replaced the no-op
+  `cancelTtl` sentinel with `undefined` and optional chaining (`cancelTtl?.()`),
+  renamed `res` → `raw` to distinguish the original promise from the TTL-raced one,
+  moved `return` inside the `try` block as `return await tracked`, replaced the manual
+  iterator call (`registry.keys().next().value`) with array destructuring, and aligned
+  the `identifier` ternary arms on separate lines.
+- Refactored `src/index.test.ts` for readability and elegance: moved `testFunctionBuilder`
+  option destructuring into the function body, replaced 7 near-identical "non-serializable
+  argument" `it()` blocks with a single `it.each()` data table (circular-reference test
+  kept standalone), collapsed 3 TTL and 5 `maxSize` `RangeError` `it()` blocks into two
+  `it.each()` calls, replaced four `toHaveProperty()` calls with two `toMatchObject()`
+  calls against a shared fixture, removed a redundant inline comment, and spread
+  concurrent `Promise.all` arguments onto separate lines.
+
 ## [0.4.3] - 2026-03-14
 ### Fixed
 - TypeScript error *"Expected 0 arguments, but got 1"* in the `maxSize` eviction test: the
