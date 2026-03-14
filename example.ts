@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-import recycle from './src/index.js';
+import recycle, { PromiseTimeoutError } from './src/index.js';
 
 const log = console.log;
 
@@ -58,20 +58,27 @@ server.listen(8000);
     log('[example 1] Distinct responses:', new Set(responses).size, '(all identical)');
 
     // ---------------------------------------------------------------------------
-    // Example 2: TTL — evicting a never-settling promise after a timeout
+    // Example 2: TTL — all in-flight callers are rejected with PromiseTimeoutError
     // ---------------------------------------------------------------------------
-    log('\n[example 2] Demonstrating TTL eviction...');
+    log('\n[example 2] Demonstrating TTL rejection...');
 
     const neverSettles = recycle(
         () => new Promise<string>(() => { /* intentionally never resolves */ }),
         { keyBuilder: 'stuck', ttl: 500 }
     );
 
-    neverSettles(); // fire and forget
-    log('[example 2] pendingCount immediately after call:', neverSettles.pendingCount); // 1
+    log('[example 2] pendingCount before call:', neverSettles.pendingCount); // 0
 
-    await new Promise(resolve => setTimeout(resolve, 600)); // wait past the TTL
-    log('[example 2] pendingCount after TTL elapses:', neverSettles.pendingCount); // 0 — evicted
+    try {
+        const p = neverSettles();
+        log('[example 2] pendingCount during call:', neverSettles.pendingCount); // 1
+        await p; // rejects with PromiseTimeoutError after 500 ms
+    } catch (err) {
+        if (err instanceof PromiseTimeoutError) {
+            log('[example 2] Caught PromiseTimeoutError — TTL elapsed while promise was pending.');
+            log('[example 2] pendingCount after TTL:', neverSettles.pendingCount); // 0 — evicted
+        }
+    }
 
     server.close();
 })();

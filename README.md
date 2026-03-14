@@ -84,8 +84,10 @@ const { default: recycle } = require('pending-promise-recycler');
 ### Identifying recyclable promises
 
 The internal registry where recyclable promises are stored needs to identify them somehow. By default functions will
-be uniquely identified by their function name and hashed arguments, but it is **strongly recommended to use a custom
-key builder** to make sure your recycling needs are met. This can be done as follows:
+be uniquely identified by their function name and hashed arguments. The default key builder requires all arguments
+to be JSON-serializable: passing a function, symbol, `undefined`, or any object with a circular reference will throw
+an error at call time. In those cases — and whenever finer control over identity is needed — it is **strongly
+recommended to use a custom key builder**. This can be done as follows:
 
 ```typescript
 // Identify the recyclable function with a fixed string
