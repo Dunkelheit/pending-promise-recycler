@@ -45,7 +45,9 @@ export default function recycle<TArgs extends unknown[], TResult>(
         let ttlTimer: ReturnType<typeof setTimeout> | undefined;
         if (options.ttl !== undefined) {
             ttlTimer = setTimeout(() => {
-                registry.delete(identifier);
+                if (registry.get(identifier) === res) {
+                    registry.delete(identifier);
+                }
             }, options.ttl);
         }
 
@@ -53,7 +55,9 @@ export default function recycle<TArgs extends unknown[], TResult>(
             await res;
         } finally {
             clearTimeout(ttlTimer);
-            registry.delete(identifier);
+            if (registry.get(identifier) === res) {
+                registry.delete(identifier);
+            }
         }
 
         return res;
