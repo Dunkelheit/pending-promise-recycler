@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-03-14
+### Fixed
+- TypeScript error *"Expected 0 arguments, but got 1"* in the `maxSize` eviction test: the
+  `neverSettles` spy was typed as `() => Promise<string>` (no parameters), causing the
+  wrapped function's `TArgs` to be inferred as `[]`. Changed the spy signature to
+  `(..._args: unknown[]) => Promise<string>` so it correctly accepts the key arguments
+  forwarded by the custom `keyBuilder`.
+
+### Changed
+- Moved `CONTRIBUTING.md` from `.github/CONTRIBUTING.md` to the repository root, making it
+  discoverable as a standard top-level community health file.
+- Extended the ESLint config with an explicit `@typescript-eslint/no-unused-vars` rule that
+  honours the `_`-prefix convention for intentionally unused variables, arguments, and caught
+  errors (`varsIgnorePattern`, `argsIgnorePattern`, `caughtErrorsIgnorePattern`).
+
+### Added
+- `CODE_OF_CONDUCT.md`: Contributor Covenant 3.0, establishing community standards and
+  expectations for all participants.
+
 ## [0.4.2] - 2026-03-14
 ### Added
 - `CLAUDE.md`: guidance for Claude AI agents covering architecture, commands, code

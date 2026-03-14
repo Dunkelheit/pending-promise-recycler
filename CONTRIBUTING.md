@@ -22,7 +22,7 @@ follow, and the process for submitting changes.
 ## Code of conduct
 
 Please be respectful and constructive in all interactions. This project follows the
-[Contributor Covenant Code of Conduct](../CODE_OF_CONDUCT.md). By participating you
+[Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md). By participating you
 agree to abide by its terms.
 
 ---

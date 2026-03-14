@@ -440,7 +440,7 @@ describe('pending-promise-recycler', () => {
 
         it('Evicts the oldest entry (FIFO) when the registry reaches maxSize', async () => {
             vi.useFakeTimers();
-            const neverSettles = vi.fn(() => new Promise<string>(() => {}));
+            const neverSettles = vi.fn((..._args: unknown[]) => new Promise<string>(() => {}));
             const recyclableFunc = recycle(neverSettles, { maxSize: 2, keyBuilder: (_, ...args) => String(args[0]) });
 
             // Fill the registry to capacity.
