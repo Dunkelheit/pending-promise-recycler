@@ -2,7 +2,7 @@
 
 > Save precious resources and avoid performing the same operation again and again by recycling pending promises.
 
-![Node.js CI](https://github.com/Dunkelheit/pending-promise-recycler/workflows/Node.js%20CI/badge.svg)
+[![CI](https://github.com/Dunkelheit/pending-promise-recycler/actions/workflows/ci.yml/badge.svg)](https://github.com/Dunkelheit/pending-promise-recycler/actions/workflows/ci.yml)
 
 `pending-promise-recycler` is a lightweight, production-dependency-free TypeScript module meant to use existing pending
 promises as many times as needed, instead of creating new ones.
