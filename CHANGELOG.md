@@ -12,15 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pendingCount` property on the wrapped function, reflecting the number of promises currently
   in flight within that instance's registry.
 - `ttl` option: an optional time-to-live (in milliseconds) after which a pending promise is
-  evicted from the registry, protecting against hung promises leaking indefinitely.
+  evicted from the registry and all in-flight callers are rejected with a `PromiseTimeoutError`.
+  If the promise settles before the TTL the timer is cancelled and callers receive the value
+  normally. Must be a non-negative finite number; a `RangeError` is thrown at wrap time
+  otherwise.
+- `PromiseTimeoutError` exported class, allowing callers to distinguish a TTL rejection from
+  other errors with `instanceof`.
 - Dual ESM/CJS package: the library now ships both an ES module build (`dist/esm/`) and a
   CommonJS build (`dist/cjs/`), making it usable in both modern and legacy Node.js projects.
-- Guard in the default key builder: serialization errors (e.g. circular references) now throw
-  a descriptive message prompting the use of a custom `keyBuilder`.
+- Stricter default key builder: in addition to circular references, arguments containing
+  functions, symbols, or `undefined` now throw a descriptive error prompting the use of a
+  custom `keyBuilder`, preventing silent key collisions from lossy JSON serialisation.
 
 ### Changed
 - Internal `_registry` export removed. Observability is now provided by the public
   `pendingCount` property on each wrapped function.
+- Options (`keyBuilder`, `ttl`) are now captured once at `recycle()` call time. Mutating the
+  options object after wrapping no longer has any effect.
 
 ## [0.3.0] - 2026-02-14
 ### Changed

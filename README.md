@@ -124,16 +124,28 @@ console.log(recyclableFetch.pendingCount); // 0
 ### Protecting against hung promises with a TTL
 
 By default, if a promise never settles, its registry entry is never cleaned up. Pass a `ttl` (time-to-live, in
-milliseconds) to evict the entry automatically if the promise has not resolved or rejected within that time:
+milliseconds) to automatically evict the entry and reject all waiting callers if the promise has not resolved or
+rejected within that time:
 
 ```typescript
+import recycle, { PromiseTimeoutError } from 'pending-promise-recycler';
+
 const recyclableFetch = recycle(fetchSomethingExpensive, {
-    ttl: 5000 // evict after 5 seconds if still pending
+    ttl: 5000 // reject all callers after 5 seconds if still pending
 });
+
+try {
+    const result = await recyclableFetch(id);
+} catch (err) {
+    if (err instanceof PromiseTimeoutError) {
+        // The request was still in-flight after 5 seconds
+    }
+}
 ```
 
-If the promise settles before the TTL, the timer is cancelled and the entry is removed normally. The TTL only
-intervenes when a promise is genuinely stuck.
+If the promise settles before the TTL, the timer is cancelled, all callers receive the resolved value normally, and
+the TTL never intervenes. The `ttl` value must be a non-negative finite number; a `RangeError` is thrown at wrap
+time otherwise.
 
 ### Types
 
@@ -156,6 +168,9 @@ interface RecycleOptions {
 type RecyclableWrappedFunction<TArgs extends unknown[], TResult> = RecyclableFunction<TArgs, TResult> & {
     readonly pendingCount: number;
 };
+
+// Error thrown to all in-flight callers when a TTL elapses before the promise settles
+class PromiseTimeoutError extends Error {}
 ```
 
 ## Example
@@ -179,8 +194,10 @@ to uniquely identify the promise from the first argument, `function`.
         * `...args` is the array of arguments passed to the original function.
 
 * `ttl` &mdash; an optional number of **milliseconds** after which a pending promise is forcibly evicted from the
-registry. Useful as a safety net against promises that never settle (e.g. a hung network request). If the promise
-settles before the TTL, the timer is cancelled and normal cleanup proceeds.
+registry and all in-flight callers are rejected with a `PromiseTimeoutError`. Useful as a safety net against promises
+that never settle (e.g. a hung network request). If the promise settles before the TTL, the timer is cancelled,
+callers receive the resolved value normally, and no error is thrown. Must be a non-negative finite number; a
+`RangeError` is thrown at wrap time otherwise.
 
 ### pendingCount
 
