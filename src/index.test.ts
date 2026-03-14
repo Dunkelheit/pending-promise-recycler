@@ -8,11 +8,11 @@ interface TestFunctionOptions {
     delay?: number;
 }
 
-function testFunctionBuilder(name: string, {
-    isResolved = true,
-    result = 'Why hello there',
-    delay = 10,
-}: TestFunctionOptions = {}): (...args: unknown[]) => Promise<unknown> {
+function testFunctionBuilder(
+    name: string,
+    options: TestFunctionOptions = {}
+): (...args: unknown[]) => Promise<unknown> {
+    const { isResolved = true, result = 'Why hello there', delay = 10 } = options;
     // A computed-property object is used so the returned function's .name
     // matches `name`, which the default key builder reads via func.name.
     const fns: Record<string, (...args: unknown[]) => Promise<unknown>> = {
@@ -62,12 +62,11 @@ describe('pending-promise-recycler', () => {
                 recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
                 recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
             ]);
+            const rejected = { status: 'rejected', reason: 'Why hello there' };
             expect(spy).toHaveBeenCalledOnce();
             expect(recyclableFunc.pendingCount).toBe(0);
-            expect(promiseA).toHaveProperty('status', 'rejected');
-            expect(promiseA).toHaveProperty('reason', 'Why hello there');
-            expect(promiseB).toHaveProperty('status', 'rejected');
-            expect(promiseB).toHaveProperty('reason', 'Why hello there');
+            expect(promiseA).toMatchObject(rejected);
+            expect(promiseB).toMatchObject(rejected);
         });
     });
 
@@ -184,62 +183,26 @@ describe('pending-promise-recycler', () => {
     describe('Default key builder', () => {
 
         it('Throws a descriptive error when arguments contain a circular reference', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
             const circular: Record<string, unknown> = {};
             circular.self = circular;
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
             await expect(recyclableFunc(circular)).rejects.toThrow(
                 'pending-promise-recycler: failed to serialize arguments'
             );
         });
 
-        it('Throws a descriptive error when arguments contain a function', async () => {
+        // JSON.stringify silently misrepresents all of these, producing key collisions.
+        it.each([
+            ['a function',  () => {}       ],
+            ['a symbol',    Symbol('test') ],
+            ['undefined',   undefined      ],
+            ['NaN',         NaN            ],
+            ['Infinity',    Infinity       ],
+            ['-Infinity',   -Infinity      ],
+            ['-0',          -0             ],
+        ])('Throws a descriptive error when arguments contain %s', async (_label, value) => {
             const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(() => {})).rejects.toThrow(
-                'pending-promise-recycler: failed to serialize arguments'
-            );
-        });
-
-        it('Throws a descriptive error when arguments contain a symbol', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(Symbol('test'))).rejects.toThrow(
-                'pending-promise-recycler: failed to serialize arguments'
-            );
-        });
-
-        it('Throws a descriptive error when arguments contain undefined', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(undefined)).rejects.toThrow(
-                'pending-promise-recycler: failed to serialize arguments'
-            );
-        });
-
-        // JSON.stringify silently coerces these special number values to null, which
-        // would make distinct arguments hash to the same registry key.
-        it('Throws a descriptive error when arguments contain NaN', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(NaN)).rejects.toThrow(
-                'pending-promise-recycler: failed to serialize arguments'
-            );
-        });
-
-        it('Throws a descriptive error when arguments contain Infinity', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(Infinity)).rejects.toThrow(
-                'pending-promise-recycler: failed to serialize arguments'
-            );
-        });
-
-        it('Throws a descriptive error when arguments contain -Infinity', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(-Infinity)).rejects.toThrow(
-                'pending-promise-recycler: failed to serialize arguments'
-            );
-        });
-
-        // JSON.stringify serialises -0 as "0", colliding with 0.
-        it('Throws a descriptive error when arguments contain -0', async () => {
-            const recyclableFunc = recycle(testFunctionBuilder('a'));
-            await expect(recyclableFunc(-0)).rejects.toThrow(
+            await expect(recyclableFunc(value)).rejects.toThrow(
                 'pending-promise-recycler: failed to serialize arguments'
             );
         });
@@ -253,7 +216,6 @@ describe('pending-promise-recycler', () => {
             const recyclableA = recycle(funcA, { keyBuilder: 'same-key' });
             const recyclableB = recycle(funcB, { keyBuilder: 'same-key' });
 
-            // Fire both concurrently
             const [resultA, resultB] = await Promise.all([recyclableA(), recyclableB()]);
 
             // Both underlying functions must have been invoked — no cross-instance recycling
@@ -285,7 +247,9 @@ describe('pending-promise-recycler', () => {
             const recyclableFunc = recycle(spy, { keyBuilder: 'key' });
 
             const [r1, r2, r3] = await Promise.all([
-                recyclableFunc(), recyclableFunc(), recyclableFunc()
+                recyclableFunc(),
+                recyclableFunc(),
+                recyclableFunc(),
             ]);
             expect(spy).toHaveBeenCalledOnce();
             expect(r1).toBe('Why hello there');
@@ -400,42 +364,15 @@ describe('pending-promise-recycler', () => {
             p2.catch(() => {}); // p2 never settles in this test; suppress future rejection
         });
 
-        it('Throws a RangeError when ttl is negative', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { ttl: -1 }))
-                .toThrow(RangeError);
-        });
-
-        it('Throws a RangeError when ttl is NaN', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { ttl: NaN }))
-                .toThrow(RangeError);
-        });
-
-        it('Throws a RangeError when ttl is Infinity', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { ttl: Infinity }))
-                .toThrow(RangeError);
+        it.each([-1, NaN, Infinity])('Throws a RangeError when ttl is %s', (value) => {
+            expect(() => recycle(testFunctionBuilder('a'), { ttl: value })).toThrow(RangeError);
         });
     });
 
     describe('maxSize', () => {
 
-        it('Throws a RangeError when maxSize is 0', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { maxSize: 0 })).toThrow(RangeError);
-        });
-
-        it('Throws a RangeError when maxSize is negative', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { maxSize: -1 })).toThrow(RangeError);
-        });
-
-        it('Throws a RangeError when maxSize is NaN', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { maxSize: NaN })).toThrow(RangeError);
-        });
-
-        it('Throws a RangeError when maxSize is Infinity', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { maxSize: Infinity })).toThrow(RangeError);
-        });
-
-        it('Throws a RangeError when maxSize is a non-integer', () => {
-            expect(() => recycle(testFunctionBuilder('a'), { maxSize: 1.5 })).toThrow(RangeError);
+        it.each([0, -1, NaN, Infinity, 1.5])('Throws a RangeError when maxSize is %s', (value) => {
+            expect(() => recycle(testFunctionBuilder('a'), { maxSize: value })).toThrow(RangeError);
         });
 
         it('Evicts the oldest entry (FIFO) when the registry reaches maxSize', async () => {
