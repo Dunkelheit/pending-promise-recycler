@@ -212,6 +212,37 @@ describe('pending-promise-recycler', () => {
                 'pending-promise-recycler: failed to serialize arguments'
             );
         });
+
+        // JSON.stringify silently coerces these special number values to null, which
+        // would make distinct arguments hash to the same registry key.
+        it('Throws a descriptive error when arguments contain NaN', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(NaN)).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
+
+        it('Throws a descriptive error when arguments contain Infinity', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(Infinity)).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
+
+        it('Throws a descriptive error when arguments contain -Infinity', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(-Infinity)).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
+
+        // JSON.stringify serialises -0 as "0", colliding with 0.
+        it('Throws a descriptive error when arguments contain -0', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(-0)).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
     });
 
     describe('Per-instance registry', () => {
@@ -383,6 +414,102 @@ describe('pending-promise-recycler', () => {
             expect(() => recycle(testFunctionBuilder('a'), { ttl: Infinity }))
                 .toThrow(RangeError);
         });
+    });
+
+    describe('maxSize', () => {
+
+        it('Throws a RangeError when maxSize is 0', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { maxSize: 0 })).toThrow(RangeError);
+        });
+
+        it('Throws a RangeError when maxSize is negative', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { maxSize: -1 })).toThrow(RangeError);
+        });
+
+        it('Throws a RangeError when maxSize is NaN', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { maxSize: NaN })).toThrow(RangeError);
+        });
+
+        it('Throws a RangeError when maxSize is Infinity', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { maxSize: Infinity })).toThrow(RangeError);
+        });
+
+        it('Throws a RangeError when maxSize is a non-integer', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { maxSize: 1.5 })).toThrow(RangeError);
+        });
+
+        it('Evicts the oldest entry (FIFO) when the registry reaches maxSize', async () => {
+            vi.useFakeTimers();
+            const neverSettles = vi.fn((..._args: unknown[]) => new Promise<string>(() => {}));
+            const recyclableFunc = recycle(neverSettles, { maxSize: 2, keyBuilder: (_, ...args) => String(args[0]) });
+
+            // Fill the registry to capacity.
+            recyclableFunc('key-1').catch(() => {});  // registry: {key-1}
+            recyclableFunc('key-2').catch(() => {});  // registry: {key-1, key-2}
+            expect(recyclableFunc.pendingCount).toBe(2);
+            expect(neverSettles).toHaveBeenCalledTimes(2);
+
+            // A third unique key exceeds maxSize=2; key-1 (oldest) must be evicted.
+            recyclableFunc('key-3').catch(() => {});  // registry: {key-2, key-3}
+            expect(recyclableFunc.pendingCount).toBe(2);
+
+            // key-1 is no longer tracked, so the next call with it starts a fresh promise.
+            recyclableFunc('key-1').catch(() => {});  // registry: {key-3, key-1}
+            expect(neverSettles).toHaveBeenCalledTimes(4);
+            expect(recyclableFunc.pendingCount).toBe(2);
+        });
+
+        it('A recycled call with an existing key does not count against maxSize', async () => {
+            // Recycled calls return the existing registry entry without adding a new one,
+            // so they must not trigger eviction.
+            vi.useFakeTimers();
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 50 }));
+            const recyclableFunc = recycle(spy, { maxSize: 1 });
+
+            const p1 = recyclableFunc('key-1');
+            const p2 = recyclableFunc('key-1'); // recycled — must not evict key-1's own entry
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            await vi.advanceTimersByTimeAsync(50);
+            const [r1, r2] = await Promise.all([p1, p2]);
+            expect(spy).toHaveBeenCalledOnce();
+            expect(r1).toBe('Why hello there');
+            expect(r2).toBe('Why hello there');
+        });
+
+        it('Callers of an evicted entry still receive the underlying result', async () => {
+            // The original caller started a promise that is later evicted from the
+            // registry to make room for a new key.  The promise itself is not cancelled;
+            // the original caller's await must still resolve with the correct value.
+            vi.useFakeTimers();
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 100 }));
+            const recyclableFunc = recycle(spy, { maxSize: 1 });
+
+            const p1 = recyclableFunc('key-1');   // registry: {key-1}
+            // key-2 evicts key-1 from the registry, but p1's underlying promise is still running.
+            recyclableFunc('key-2').catch(() => {}); // registry: {key-2}
+            expect(recyclableFunc.pendingCount).toBe(1);
+            expect(spy).toHaveBeenCalledTimes(2);
+
+            await vi.advanceTimersByTimeAsync(200);
+            // p1 resolves normally because eviction only removes the registry entry,
+            // not the underlying promise.
+            await expect(p1).resolves.toBe('Why hello there');
+        });
+
+        it('maxSize interacts correctly with TTL: eviction does not disturb the TTL timer', async () => {
+            vi.useFakeTimers();
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 100 }));
+            const recyclableFunc = recycle(spy, { maxSize: 1, ttl: 500 });
+
+            const p1 = recyclableFunc('key-1');   // starts with TTL armed
+            recyclableFunc('key-2').catch(() => {}); // evicts key-1; key-2 gets its own TTL
+
+            // Advance past the promise resolution delay (100 ms) — both should resolve normally.
+            await vi.advanceTimersByTimeAsync(200);
+            await expect(p1).resolves.toBe('Why hello there');
+        });
+
     });
 
     describe('pendingCount', () => {

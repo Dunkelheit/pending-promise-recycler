@@ -24,6 +24,11 @@ export default tseslint.config(
             'semi': ['error', 'always'],
             'space-in-parens': ['error', 'never'],
             'keyword-spacing': ['error', { before: true, after: true }],
+            '@typescript-eslint/no-unused-vars': ['error', {
+                varsIgnorePattern: '^_',
+                argsIgnorePattern: '^_',
+                caughtErrorsIgnorePattern: '^_',
+            }],
         },
     },
 );
