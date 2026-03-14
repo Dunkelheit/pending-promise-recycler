@@ -2,7 +2,7 @@
 
 > Save precious resources and avoid performing the same operation again and again by recycling pending promises.
 
-![Node.js CI](https://github.com/Dunkelheit/pending-promise-recycler/workflows/Node.js%20CI/badge.svg)
+[![CI](https://github.com/Dunkelheit/pending-promise-recycler/actions/workflows/ci.yml/badge.svg)](https://github.com/Dunkelheit/pending-promise-recycler/actions/workflows/ci.yml)
 
 `pending-promise-recycler` is a lightweight, production-dependency-free TypeScript module meant to use existing pending
 promises as many times as needed, instead of creating new ones.
@@ -40,8 +40,12 @@ import recycle from 'pending-promise-recycler';
 const recyclableFetch = recycle(fetchSomethingExpensive);
 
 // Simulate four concurrent incoming requests
-const responses = await Promise.all([ recyclableFetch('a', 'b'),
-    recyclableFetch('a', 'b'), recyclableFetch('a', 'b'), recyclableFetch('a', 'b') ]);
+const responses = await Promise.all([
+    recyclableFetch('a', 'b'),
+    recyclableFetch('a', 'b'),
+    recyclableFetch('a', 'b'),
+    recyclableFetch('a', 'b'),
+]);
 
 console.log(responses);
 // [ { foo: 'bar' }, { foo: 'bar' }, { foo: 'bar' }, { foo: 'bar' } ]
@@ -58,8 +62,7 @@ Install `pending-promise-recycler` using `npm`:
 > npm install pending-promise-recycler
 ```
 
-Import the module and wrap any promise-returning function with it, optionally passing an object with
-options.
+Import the module and wrap any promise-returning function with it, optionally passing an object with options.
 
 ```typescript
 import recycle from 'pending-promise-recycler';
@@ -68,11 +71,23 @@ import recycle from 'pending-promise-recycler';
 const recyclableFunc = recycle(func, {});
 ```
 
+The module ships both an ES module build and a CommonJS build, so it works in ESM and CJS projects alike:
+
+```typescript
+// ESM
+import recycle from 'pending-promise-recycler';
+
+// CommonJS
+const { default: recycle } = require('pending-promise-recycler');
+```
+
 ### Identifying recyclable promises
 
-The internal registry where recyclable promises are stored needs to identify them somehow, by default functions will
-be uniquely identified by their function name and hashed arguments, but it is **strongly recommended to use a custom
-key builder** to make sure your recycling needs are met. This can be done as follows:
+The internal registry where recyclable promises are stored needs to identify them somehow. By default functions will
+be uniquely identified by their function name and hashed arguments. The default key builder requires all arguments
+to be JSON-serializable: passing a function, symbol, `undefined`, or any object with a circular reference will throw
+an error at call time. In those cases — and whenever finer control over identity is needed — it is **strongly
+recommended to use a custom key builder**. This can be done as follows:
 
 ```typescript
 // Identify the recyclable function with a fixed string
@@ -88,6 +103,52 @@ const moreFineTunedRecyclableFetch = recycle(fetchSomethingExpensive, {
 });
 ```
 
+### Observing in-flight promises
+
+Every wrapped function exposes a `pendingCount` property that reflects the number of promises currently in flight
+within its registry:
+
+```typescript
+const recyclableFetch = recycle(fetchSomethingExpensive);
+
+console.log(recyclableFetch.pendingCount); // 0
+
+const p1 = recyclableFetch('a', 'b');
+const p2 = recyclableFetch('a', 'b'); // recycled — same key, same promise
+
+console.log(recyclableFetch.pendingCount); // 1 (one registry entry, not two)
+
+await Promise.all([p1, p2]);
+
+console.log(recyclableFetch.pendingCount); // 0
+```
+
+### Protecting against hung promises with a TTL
+
+By default, if a promise never settles, its registry entry is never cleaned up. Pass a `ttl` (time-to-live, in
+milliseconds) to automatically evict the entry and reject all waiting callers if the promise has not resolved or
+rejected within that time:
+
+```typescript
+import recycle, { PromiseTimeoutError } from 'pending-promise-recycler';
+
+const recyclableFetch = recycle(fetchSomethingExpensive, {
+    ttl: 5000 // reject all callers after 5 seconds if still pending
+});
+
+try {
+    const result = await recyclableFetch(id);
+} catch (err) {
+    if (err instanceof PromiseTimeoutError) {
+        // The request was still in-flight after 5 seconds
+    }
+}
+```
+
+If the promise settles before the TTL, the timer is cancelled, all callers receive the resolved value normally, and
+the TTL never intervenes. The `ttl` value must be a non-negative finite number; a `RangeError` is thrown at wrap
+time otherwise.
+
 ### Types
 
 The module exports the following types:
@@ -102,19 +163,29 @@ type KeyBuilderFunction = (func: (...args: unknown[]) => Promise<unknown>, ...ar
 // Options for the recycle function
 interface RecycleOptions {
     keyBuilder?: KeyBuilderFunction | string;
+    ttl?: number;
 }
+
+// The wrapped function returned by recycle(), with an added pendingCount property
+type RecyclableWrappedFunction<TArgs extends unknown[], TResult> = RecyclableFunction<TArgs, TResult> & {
+    readonly pendingCount: number;
+};
+
+// Error thrown to all in-flight callers when a TTL elapses before the promise settles
+class PromiseTimeoutError extends Error {}
 ```
 
 ## Example
 
 See [example.ts](./example.ts) for a working example with a recyclable function that fetches data from an
-http server.
+HTTP server, demonstrating recycling, `pendingCount`, and the `ttl` option.
 
 ## API
 
 ### recycle(function, options)
 
-The first argument, `function`, is any Promise function that we want to be able to recycle during its "pending" state.
+The first argument, `function`, is any Promise-returning function that we want to be able to recycle during its
+"pending" state.
 
 The second argument, `options`, is optional and can contain the following properties:
 
@@ -123,6 +194,18 @@ to uniquely identify the promise from the first argument, `function`.
     * When the value is a *function*, it will be called with the arguments `(originalFunction, ...args)`, where:
         * `originalFunc` is the original function.
         * `...args` is the array of arguments passed to the original function.
+
+* `ttl` &mdash; an optional number of **milliseconds** after which a pending promise is forcibly evicted from the
+registry and all in-flight callers are rejected with a `PromiseTimeoutError`. Useful as a safety net against promises
+that never settle (e.g. a hung network request). If the promise settles before the TTL, the timer is cancelled,
+callers receive the resolved value normally, and no error is thrown. Must be a non-negative finite number; a
+`RangeError` is thrown at wrap time otherwise.
+
+### pendingCount
+
+Every function returned by `recycle()` exposes a read-only `pendingCount` property. It reflects how many distinct
+keys are currently tracked in that instance's registry — i.e., how many unique in-flight promises are active at any
+given moment. Concurrent calls sharing the same key count as one.
 
 ## Testing
 

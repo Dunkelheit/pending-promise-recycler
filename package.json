@@ -1,14 +1,18 @@
 {
   "name": "pending-promise-recycler",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Save precious resources and avoid performing the same operation twice by recycling pending promises",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
     }
   },
   "files": [
@@ -18,10 +22,13 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc",
-    "lint": "eslint src --fix",
+    "build": "rm -rf dist && tsc && tsc -p tsconfig.cjs.json && printf '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build && npm test",
     "prepare": "husky"
   },
   "repository": {
@@ -29,9 +36,15 @@
     "url": "git+https://github.com/Dunkelheit/pending-promise-recycler.git"
   },
   "keywords": [
+    "async",
+    "coalescing",
+    "concurrent",
+    "deduplication",
+    "memoize",
     "pending",
     "promise",
-    "recycle"
+    "recycle",
+    "typescript"
   ],
   "author": "Arturo Martinez (https://github.com/dunkelheit)",
   "license": "MIT",
