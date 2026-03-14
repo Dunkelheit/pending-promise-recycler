@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
-import recycle from './index.js';
+import recycle, { PromiseTimeoutError } from './index.js';
 
 interface TestFunctionOptions {
     isResolved?: boolean;
@@ -137,14 +137,16 @@ describe('pending-promise-recycler', () => {
     describe('Key builders', () => {
 
         it('Supports custom key builder functions', async () => {
-            const spy = vi.fn(testFunctionBuilder('a'));
+            // The custom builder always returns the same key regardless of arguments.
+            // Two calls with *different* args would get different keys under the default
+            // builder — so recycling can only happen here if the custom builder is used.
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 50 }));
             const recyclableFunc = recycle(spy, {
-                keyBuilder: (_func, ...args) => args[0] as string
+                keyBuilder: () => 'fixed'
             });
-            // Two concurrent calls that resolve to the same key should be recycled
             const [r1, r2] = await Promise.all([
-                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
-                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
+                recyclableFunc('arg-A'),
+                recyclableFunc('arg-B'),
             ]);
             expect(spy).toHaveBeenCalledOnce();
             expect(recyclableFunc.pendingCount).toBe(0);
@@ -153,13 +155,18 @@ describe('pending-promise-recycler', () => {
         });
 
         it('Supports a fixed key value', async () => {
-            const spy = vi.fn(testFunctionBuilder('a'));
+            // Two calls with *different* args would get different keys under the default
+            // builder — so recycling can only happen here because of the fixed key.
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 50 }));
             const recyclableFunc = recycle(spy, { keyBuilder: 'toothbrush' });
-            const result = await recyclableFunc('lorem', 'ipsum', 'dolor sit amet');
-            expect(recyclableFunc.pendingCount).toBe(0);
+            const [r1, r2] = await Promise.all([
+                recyclableFunc('arg-A'),
+                recyclableFunc('arg-B'),
+            ]);
             expect(spy).toHaveBeenCalledOnce();
-            expect(spy).toHaveBeenCalledWith('lorem', 'ipsum', 'dolor sit amet');
-            expect(result).toBe('Why hello there');
+            expect(recyclableFunc.pendingCount).toBe(0);
+            expect(r1).toBe('Why hello there');
+            expect(r2).toBe('Why hello there');
         });
 
         it('Works with anonymous functions', async () => {
@@ -172,6 +179,57 @@ describe('pending-promise-recycler', () => {
             expect(spy).toHaveBeenCalledOnce();
             expect(spy).toHaveBeenCalledWith('lorem');
             expect(result).toBe('Why hello there');
+        });
+
+        it('Captures options at wrap time — mutating the options object afterwards has no effect', async () => {
+            // P1 starts with key 'key-A' in the registry. Then we mutate the options
+            // object to 'key-B'. If the key is re-read per call (the bug), P2 would use
+            // 'key-B', miss the registry entry, and invoke the spy a second time.
+            // If options are captured at wrap time (the fix), P2 uses 'key-A', finds P1
+            // in the registry, and is recycled — spy is only called once.
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 50 }));
+            const opts = { keyBuilder: 'key-A' };
+            const recyclableFunc = recycle(spy, opts);
+
+            const p1 = recyclableFunc();        // uses captured 'key-A', adds to registry
+            opts.keyBuilder = 'key-B';          // mutate while p1 is in-flight
+            const p2 = recyclableFunc();        // must still use 'key-A' → recycled
+
+            await Promise.all([p1, p2]);
+            expect(spy).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('Default key builder', () => {
+
+        it('Throws a descriptive error when arguments contain a circular reference', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            const circular: Record<string, unknown> = {};
+            circular.self = circular;
+            await expect(recyclableFunc(circular)).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
+
+        it('Throws a descriptive error when arguments contain a function', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(() => {})).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
+
+        it('Throws a descriptive error when arguments contain a symbol', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(Symbol('test'))).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
+        });
+
+        it('Throws a descriptive error when arguments contain undefined', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            await expect(recyclableFunc(undefined)).rejects.toThrow(
+                'pending-promise-recycler: failed to serialize arguments'
+            );
         });
     });
 
@@ -226,22 +284,33 @@ describe('pending-promise-recycler', () => {
 
     describe('TTL', () => {
 
-        it('Removes a never-settling promise from the registry after TTL elapses', () => {
+        it('Evicts from the registry and rejects all in-flight callers with PromiseTimeoutError', async () => {
             vi.useFakeTimers();
-            const neverSettles = vi.fn(() => new Promise(() => {}));
-            const recyclableFunc = recycle(neverSettles, { ttl: 500 });
+            const recyclableFunc = recycle(
+                vi.fn(() => new Promise<string>(() => {})),
+                { ttl: 500, keyBuilder: 'key' }
+            );
 
-            recyclableFunc(); // fire and forget
+            const p1 = recyclableFunc(); // first caller
+            const p2 = recyclableFunc(); // recycled — shares the same in-flight entry
+
             expect(recyclableFunc.pendingCount).toBe(1);
-
             vi.advanceTimersByTime(499);
             expect(recyclableFunc.pendingCount).toBe(1); // not yet
 
-            vi.advanceTimersByTime(1);
-            expect(recyclableFunc.pendingCount).toBe(0); // evicted
+            vi.advanceTimersByTime(1); // TTL fires — registry cleared synchronously
+            expect(recyclableFunc.pendingCount).toBe(0);
+
+            // Both the original caller and the recycled caller must receive the rejection
+            await expect(p1).rejects.toBeInstanceOf(PromiseTimeoutError);
+            await expect(p2).rejects.toBeInstanceOf(PromiseTimeoutError);
         });
 
-        it('Does not remove a promise that settles before the TTL', async () => {
+        it('Does not reject callers when the promise settles before the TTL', async () => {
+            // If the TTL fires before the promise settles, callers receive a
+            // PromiseTimeoutError. If the promise settles first, callers must receive the
+            // resolved value — not a timeout error. The assertion below is only satisfiable
+            // if the promise settled naturally.
             vi.useFakeTimers();
             const func = vi.fn(testFunctionBuilder('a', { delay: 100 }));
             const recyclableFunc = recycle(func, { ttl: 500 });
@@ -251,33 +320,38 @@ describe('pending-promise-recycler', () => {
 
             // Advance past the promise resolution (100ms) but before TTL (500ms)
             await vi.advanceTimersByTimeAsync(200);
-            expect(recyclableFunc.pendingCount).toBe(0); // settled naturally, not by TTL
-            expect(func).toHaveBeenCalledOnce();
-            await promise; // should already be resolved
+            expect(recyclableFunc.pendingCount).toBe(0);
+
+            // Resolves with the correct value — not rejected with PromiseTimeoutError
+            await expect(promise).resolves.toBe('Why hello there');
         });
 
-        it('After TTL eviction, a subsequent call creates a fresh promise', () => {
+        it('After TTL eviction, a subsequent call creates a fresh promise', async () => {
             vi.useFakeTimers();
-            const neverSettles = vi.fn(() => new Promise(() => {}));
+            const neverSettles = vi.fn(() => new Promise<string>(() => {}));
             const recyclableFunc = recycle(neverSettles, { ttl: 500, keyBuilder: 'key' });
 
-            recyclableFunc();
+            const p1 = recyclableFunc();
             expect(neverSettles).toHaveBeenCalledTimes(1);
 
             vi.advanceTimersByTime(500); // TTL fires, evicts from registry
             expect(recyclableFunc.pendingCount).toBe(0);
 
-            recyclableFunc(); // should trigger a brand-new call
+            const p2 = recyclableFunc(); // must trigger a brand-new call
             expect(neverSettles).toHaveBeenCalledTimes(2);
             expect(recyclableFunc.pendingCount).toBe(1);
+
+            await expect(p1).rejects.toBeInstanceOf(PromiseTimeoutError);
+            p2.catch(() => {}); // p2 never settles in this test; suppress future rejection
         });
 
         it('Without a TTL, a never-settling promise stays in the registry indefinitely', () => {
             vi.useFakeTimers();
-            const neverSettles = vi.fn(() => new Promise(() => {}));
-            const recyclableFunc = recycle(neverSettles); // no TTL
+            const recyclableFunc = recycle(
+                vi.fn(() => new Promise<string>(() => {}))
+            );
 
-            recyclableFunc();
+            recyclableFunc().catch(() => {}); // never rejects without TTL; catch is defensive
             expect(recyclableFunc.pendingCount).toBe(1);
 
             vi.advanceTimersByTime(60_000); // advance 1 minute
@@ -292,19 +366,41 @@ describe('pending-promise-recycler', () => {
             const fn = vi.fn(() => new Promise<string>(r => resolvers.push(r)));
             const recyclableFunc = recycle(fn, { ttl: 500, keyBuilder: 'key' });
 
-            recyclableFunc();                        // P1 starts; TTL timer armed
+            const p1 = recyclableFunc();               // P1 starts; TTL timer armed
+            // Pre-attach a handler so that when p1 rejects during the microtask flush
+            // below it is not flagged as an unhandled rejection before our assertion runs.
+            p1.catch(() => {});
             expect(recyclableFunc.pendingCount).toBe(1);
 
-            vi.advanceTimersByTime(500);             // TTL fires, P1 evicted
+            vi.advanceTimersByTime(500);               // TTL fires, P1 evicted
             expect(recyclableFunc.pendingCount).toBe(0);
 
-            recyclableFunc();                        // P2 starts with the same key
+            const p2 = recyclableFunc();               // P2 starts with the same key
             expect(recyclableFunc.pendingCount).toBe(1);
 
-            resolvers[0]('done');                    // P1 settles — its finally block must not touch P2
-            await vi.advanceTimersByTimeAsync(0);    // flush microtasks
+            resolvers[0]('done');                      // P1's underlying res settles
+            await vi.advanceTimersByTimeAsync(0);      // flush microtasks
 
-            expect(recyclableFunc.pendingCount).toBe(1); // P2 must still be tracked
+            // P1's finally block must not have touched P2's registry entry
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            await expect(p1).rejects.toBeInstanceOf(PromiseTimeoutError);
+            p2.catch(() => {}); // p2 never settles in this test; suppress future rejection
+        });
+
+        it('Throws a RangeError when ttl is negative', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { ttl: -1 }))
+                .toThrow(RangeError);
+        });
+
+        it('Throws a RangeError when ttl is NaN', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { ttl: NaN }))
+                .toThrow(RangeError);
+        });
+
+        it('Throws a RangeError when ttl is Infinity', () => {
+            expect(() => recycle(testFunctionBuilder('a'), { ttl: Infinity }))
+                .toThrow(RangeError);
         });
     });
 
