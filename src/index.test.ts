@@ -6,28 +6,22 @@ interface TestFunctionOptions {
     isResolved?: boolean;
     result?: unknown;
     delay?: number;
-    beforeResolving?: () => void;
-    afterResolving?: () => void;
 }
 
 function testFunctionBuilder(name: string, {
     isResolved = true,
     result = 'Why hello there',
     delay = 10,
-    beforeResolving = () => {},
-    afterResolving = () => {}
 }: TestFunctionOptions = {}): (...args: unknown[]) => Promise<unknown> {
     const obj: Record<string, (...args: unknown[]) => Promise<unknown>> = {
         [name]: () => {
             return new Promise((resolve, reject) => {
                 function execute() {
-                    beforeResolving();
                     if (isResolved) {
                         resolve(result);
                     } else {
                         reject(result);
                     }
-                    afterResolving();
                 }
                 if (!delay) {
                     return execute();
@@ -288,6 +282,29 @@ describe('pending-promise-recycler', () => {
 
             vi.advanceTimersByTime(60_000); // advance 1 minute
             expect(recyclableFunc.pendingCount).toBe(1); // still there
+        });
+
+        it('Does not delete a later call\'s entry when the original hung promise settles after TTL', async () => {
+            vi.useFakeTimers();
+            // Collect each call's resolve function in order so P1 and P2 can be
+            // settled independently — fn is called twice (once per non-recycled invocation).
+            const resolvers: Array<(value: string) => void> = [];
+            const fn = vi.fn(() => new Promise<string>(r => resolvers.push(r)));
+            const recyclableFunc = recycle(fn, { ttl: 500, keyBuilder: 'key' });
+
+            recyclableFunc();                        // P1 starts; TTL timer armed
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            vi.advanceTimersByTime(500);             // TTL fires, P1 evicted
+            expect(recyclableFunc.pendingCount).toBe(0);
+
+            recyclableFunc();                        // P2 starts with the same key
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            resolvers[0]('done');                    // P1 settles — its finally block must not touch P2
+            await vi.advanceTimersByTimeAsync(0);    // flush microtasks
+
+            expect(recyclableFunc.pendingCount).toBe(1); // P2 must still be tracked
         });
     });
 
