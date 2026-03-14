@@ -13,24 +13,15 @@ function testFunctionBuilder(name: string, {
     result = 'Why hello there',
     delay = 10,
 }: TestFunctionOptions = {}): (...args: unknown[]) => Promise<unknown> {
-    const obj: Record<string, (...args: unknown[]) => Promise<unknown>> = {
-        [name]: () => {
-            return new Promise((resolve, reject) => {
-                function execute() {
-                    if (isResolved) {
-                        resolve(result);
-                    } else {
-                        reject(result);
-                    }
-                }
-                if (!delay) {
-                    return execute();
-                }
-                setTimeout(execute, delay);
-            });
-        }
+    // A computed-property object is used so the returned function's .name
+    // matches `name`, which the default key builder reads via func.name.
+    const fns: Record<string, (...args: unknown[]) => Promise<unknown>> = {
+        [name]: () => new Promise((resolve, reject) => {
+            const settle = () => (isResolved ? resolve(result) : reject(result));
+            if (delay > 0) { setTimeout(settle, delay); } else { settle(); }
+        }),
     };
-    return obj[name];
+    return fns[name];
 }
 
 describe('pending-promise-recycler', () => {
@@ -52,28 +43,26 @@ describe('pending-promise-recycler', () => {
         });
 
         it('Executes a fulfilled promise function twice, recycling the promise itself', async () => {
-            const func = testFunctionBuilder('a');
-            const funcSpy = vi.fn(func);
-            const recyclableFunc = recycle(funcSpy);
+            const spy = vi.fn(testFunctionBuilder('a'));
+            const recyclableFunc = recycle(spy);
             const [resultA, resultB] = await Promise.all([
                 recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
                 recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
             ]);
-            expect(funcSpy).toHaveBeenCalledOnce();
+            expect(spy).toHaveBeenCalledOnce();
             expect(recyclableFunc.pendingCount).toBe(0);
             expect(resultA).toBe('Why hello there');
             expect(resultB).toBe('Why hello there');
         });
 
         it('Executes a rejected promise function twice, recycling the promise itself', async () => {
-            const func = testFunctionBuilder('a', { isResolved: false });
-            const funcSpy = vi.fn(func);
-            const recyclableFunc = recycle(funcSpy);
+            const spy = vi.fn(testFunctionBuilder('a', { isResolved: false }));
+            const recyclableFunc = recycle(spy);
             const [promiseA, promiseB] = await Promise.allSettled([
                 recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
                 recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
             ]);
-            expect(funcSpy).toHaveBeenCalledOnce();
+            expect(spy).toHaveBeenCalledOnce();
             expect(recyclableFunc.pendingCount).toBe(0);
             expect(promiseA).toHaveProperty('status', 'rejected');
             expect(promiseA).toHaveProperty('reason', 'Why hello there');
@@ -97,38 +86,28 @@ describe('pending-promise-recycler', () => {
         });
 
         it('Handles promises that cause a TypeError', async () => {
-            const func = () => {
-                return new Promise(resolve => {
-                    const hmmm = ('' as unknown as Record<number, Record<number, unknown>>)[0][0];
-                    resolve(hmmm);
-                });
-            };
-            const spy = vi.fn(func);
-            const recyclableFunc = recycle(spy);
-            await expect(recyclableFunc()).rejects.toThrow();
+            // Deliberately accesses a property on undefined inside the Promise
+            // constructor, producing a TypeError rejection without any throw statement.
+            const func = () => new Promise(resolve => {
+                resolve((undefined as unknown as Record<string, unknown>)['key']);
+            });
+            const recyclableFunc = recycle(func);
+            await expect(recyclableFunc()).rejects.toThrow(TypeError);
             expect(recyclableFunc.pendingCount).toBe(0);
         });
 
         it('Handles promises that throw an unhandled rejection error', async () => {
             const err = new Error('Something went wrong!');
-            const func = () => {
-                return new Promise(() => {
-                    throw err;
-                });
-            };
-            const spy = vi.fn(func);
-            const recyclableFunc = recycle(spy);
+            const func = () => new Promise(() => { throw err; });
+            const recyclableFunc = recycle(func);
             await expect(recyclableFunc()).rejects.toThrow(err);
             expect(recyclableFunc.pendingCount).toBe(0);
         });
 
         it('Handles async functions that throw an unhandled rejection error', async () => {
             const err = new Error('Something went wrong!');
-            const func = async () => {
-                throw err;
-            };
-            const spy = vi.fn(func);
-            const recyclableFunc = recycle(spy);
+            const func = async () => { throw err; };
+            const recyclableFunc = recycle(func);
             await expect(recyclableFunc()).rejects.toThrow(err);
             expect(recyclableFunc.pendingCount).toBe(0);
         });
@@ -172,6 +151,8 @@ describe('pending-promise-recycler', () => {
         it('Works with anonymous functions', async () => {
             const innerFunc = testFunctionBuilder('');
             const spy = vi.fn(innerFunc);
+            // vi.fn() renames the wrapper; restore the original empty name so the
+            // default key builder exercises the `func.name || 'anonymous'` fallback.
             Object.defineProperty(spy, 'name', { value: innerFunc.name });
             const recyclableFunc = recycle(spy);
             const result = await recyclableFunc('lorem');
