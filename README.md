@@ -85,9 +85,20 @@ const { default: recycle } = require('pending-promise-recycler');
 
 The internal registry where recyclable promises are stored needs to identify them somehow. By default functions will
 be uniquely identified by their function name and hashed arguments. The default key builder requires all arguments
-to be JSON-serializable: passing a function, symbol, `undefined`, or any object with a circular reference will throw
-an error at call time. In those cases — and whenever finer control over identity is needed — it is **strongly
-recommended to use a custom key builder**. This can be done as follows:
+to be unambiguously JSON-serializable. The following values throw a descriptive error at call time because
+`JSON.stringify` would either omit them or silently coerce them to a form that collides with another value:
+
+| Value | Problem |
+|---|---|
+| `function`, `symbol`, `undefined` | Omitted or replaced by `null` inside arrays |
+| `NaN`, `Infinity`, `-Infinity` | All become the JSON literal `null` |
+| `-0` | Serialised as `"0"`, indistinguishable from `0` |
+| Circular references | `JSON.stringify` throws |
+
+Objects whose `toJSON()` method returns a different shape than the object itself are serialised using the `toJSON()`
+return value, which can cause two structurally different arguments to hash to the same key. In that situation — and
+whenever finer control over identity is needed — it is **strongly recommended to use a custom key builder**. This
+can be done as follows:
 
 ```typescript
 // Identify the recyclable function with a fixed string
@@ -122,6 +133,34 @@ await Promise.all([p1, p2]);
 
 console.log(recyclableFetch.pendingCount); // 0
 ```
+
+### Capping the registry size with maxSize
+
+Without any guard, a function called with many distinct argument combinations can accumulate an unbounded number of
+in-flight entries in the registry — a potential denial-of-service vector in high-throughput services. Pass a
+`maxSize` option to cap the registry at a fixed number of entries:
+
+```typescript
+const recyclableFetch = recycle(fetchSomethingExpensive, {
+    maxSize: 100  // keep at most 100 concurrent in-flight entries
+});
+```
+
+When a new key would push the registry over the limit, the oldest (first-inserted) entry is evicted before the new
+one is added (FIFO order). Eviction only removes the entry from the registry; the underlying promise keeps running
+and the original caller still receives its result. New calls arriving after eviction with the same key will start
+a fresh promise.
+
+`maxSize` can be combined with `ttl`:
+
+```typescript
+const recyclableFetch = recycle(fetchSomethingExpensive, {
+    maxSize: 100,
+    ttl: 5000,
+});
+```
+
+The `maxSize` value must be a positive integer; a `RangeError` is thrown at wrap time otherwise.
 
 ### Protecting against hung promises with a TTL
 
@@ -164,6 +203,7 @@ type KeyBuilderFunction = (func: (...args: unknown[]) => Promise<unknown>, ...ar
 interface RecycleOptions {
     keyBuilder?: KeyBuilderFunction | string;
     ttl?: number;
+    maxSize?: number;
 }
 
 // The wrapped function returned by recycle(), with an added pendingCount property
@@ -200,6 +240,11 @@ registry and all in-flight callers are rejected with a `PromiseTimeoutError`. Us
 that never settle (e.g. a hung network request). If the promise settles before the TTL, the timer is cancelled,
 callers receive the resolved value normally, and no error is thrown. Must be a non-negative finite number; a
 `RangeError` is thrown at wrap time otherwise.
+
+* `maxSize` &mdash; an optional positive integer that caps the number of concurrent in-flight entries the registry
+may hold. When a new key would exceed this limit, the oldest (first-inserted) entry is evicted first (FIFO). The
+evicted promise is not cancelled; its original caller still receives the result. New callers with the evicted key
+will start a fresh promise. Must be a positive integer; a `RangeError` is thrown at wrap time otherwise.
 
 ### pendingCount
 
