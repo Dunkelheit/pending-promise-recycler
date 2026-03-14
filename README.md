@@ -62,13 +62,28 @@ Install `pending-promise-recycler` using `npm`:
 > npm install pending-promise-recycler
 ```
 
-Import the module and wrap any promise-returning function with it, optionally passing an object with options.
+Import the module and wrap any promise-returning function with it:
 
 ```typescript
 import recycle from 'pending-promise-recycler';
 
-// recycle(func, options)
-const recyclableFunc = recycle(func, {});
+const recyclableFetch = recycle(fetchSomethingExpensive);
+```
+
+All three options are optional. Pass any combination of them to customise the behaviour:
+
+```typescript
+// keyBuilder — function or fixed string used to derive the cache key for each call.
+//              Defaults to a SHA-256 hash of the function name and serialised arguments.
+// ttl        — milliseconds before an in-flight entry is evicted and all waiting callers
+//              are rejected with a PromiseTimeoutError. Omit to wait indefinitely.
+// maxSize    — maximum number of concurrent in-flight entries. When the limit is reached,
+//              the oldest entry is evicted first (FIFO). Omit for an unbounded registry.
+const recyclableFetch = recycle(fetchSomethingExpensive, {
+    keyBuilder: (_, arg1, arg2) => `${arg1}:${arg2}`,
+    ttl: 5000,
+    maxSize: 100,
+});
 ```
 
 The module ships both an ES module build and a CommonJS build, so it works in ESM and CJS projects alike:
