@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { format } from 'node:util';
 
-import recycle, { _registry as registry } from './index.js';
+import recycle from './index.js';
 
 interface TestFunctionOptions {
     isResolved?: boolean;
@@ -44,62 +43,44 @@ describe('pending-promise-recycler', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
     describe('Basic usage', () => {
 
         it('Executes a promise function once', async () => {
-            function beforeResolving() {
-                expect(registry.has('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37')).toBe(true);
-                expect(registry.size).toBe(1);
-                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
-                expect(p).toBeInstanceOf(Promise);
-                expect(format('%s', p)).toBe('Promise { <pending> }');
-            }
-            function afterResolving() {
-                expect(registry.has('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37')).toBe(true);
-                expect(registry.size).toBe(1);
-                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
-                expect(p).toBeInstanceOf(Promise);
-                expect(format('%s', p)).toBe('Promise { \'Why hello there\' }');
-            }
-            const spy = vi.fn(testFunctionBuilder('a', { beforeResolving, afterResolving }));
-            const cachedFunc = recycle(spy);
-            const result = await cachedFunc('lorem', 'ipsum', 'dolor sit amet');
-            expect(registry.size).toBe(0);
+            const spy = vi.fn(testFunctionBuilder('a'));
+            const recyclableFunc = recycle(spy);
+            const result = await recyclableFunc('lorem', 'ipsum', 'dolor sit amet');
             expect(spy).toHaveBeenCalledOnce();
             expect(spy).toHaveBeenCalledWith('lorem', 'ipsum', 'dolor sit amet');
             expect(result).toBe('Why hello there');
         });
 
         it('Executes a fulfilled promise function twice, recycling the promise itself', async () => {
-            const registryGetSpy = vi.spyOn(registry, 'get');
             const func = testFunctionBuilder('a');
             const funcSpy = vi.fn(func);
-            const cachedFunc = recycle(funcSpy);
-            const [promiseA, promiseB] = await Promise.all([
-                cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
-                cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
+            const recyclableFunc = recycle(funcSpy);
+            const [resultA, resultB] = await Promise.all([
+                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
+                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
             ]);
-            expect(registryGetSpy).toHaveBeenCalledOnce();
             expect(funcSpy).toHaveBeenCalledOnce();
-            expect(registry.size).toBe(0);
-            expect(promiseA).toBe('Why hello there');
-            expect(promiseB).toBe('Why hello there');
+            expect(recyclableFunc.pendingCount).toBe(0);
+            expect(resultA).toBe('Why hello there');
+            expect(resultB).toBe('Why hello there');
         });
 
         it('Executes a rejected promise function twice, recycling the promise itself', async () => {
-            const registryGetSpy = vi.spyOn(registry, 'get');
             const func = testFunctionBuilder('a', { isResolved: false });
             const funcSpy = vi.fn(func);
-            const cachedFunc = recycle(funcSpy);
+            const recyclableFunc = recycle(funcSpy);
             const [promiseA, promiseB] = await Promise.allSettled([
-                cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
-                cachedFunc('lorem', 'ipsum', 'dolor sit amet'),
+                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
+                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
             ]);
-            expect(registryGetSpy).toHaveBeenCalledOnce();
             expect(funcSpy).toHaveBeenCalledOnce();
-            expect(registry.size).toBe(0);
+            expect(recyclableFunc.pendingCount).toBe(0);
             expect(promiseA).toHaveProperty('status', 'rejected');
             expect(promiseA).toHaveProperty('reason', 'Why hello there');
             expect(promiseB).toHaveProperty('status', 'rejected');
@@ -110,28 +91,13 @@ describe('pending-promise-recycler', () => {
     describe('Error handling', () => {
 
         it('Handles rejected promises, making sure the registry stays clean', async () => {
-            function beforeResolving() {
-                expect(registry.has('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37')).toBe(true);
-                expect(registry.size).toBe(1);
-                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
-                expect(p).toBeInstanceOf(Promise);
-                expect(format('%s', p)).toBe('Promise { <pending> }');
-            }
-            function afterResolving() {
-                expect(registry.has('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37')).toBe(true);
-                expect(registry.size).toBe(1);
-                const p = registry.get('a-91f967512ad54d194006a3cacf3a94d7f9c4ded44bb194c1e9e0fb1c21cb9a37');
-                expect(p).toBeInstanceOf(Promise);
-            }
             const spy = vi.fn(testFunctionBuilder('a', {
                 isResolved: false,
                 result: new Error('Ruh-roh'),
-                beforeResolving,
-                afterResolving
             }));
-            const cachedFunc = recycle(spy);
-            await expect(cachedFunc('lorem', 'ipsum', 'dolor sit amet')).rejects.toThrow('Ruh-roh');
-            expect(registry.size).toBe(0);
+            const recyclableFunc = recycle(spy);
+            await expect(recyclableFunc('lorem', 'ipsum', 'dolor sit amet')).rejects.toThrow('Ruh-roh');
+            expect(recyclableFunc.pendingCount).toBe(0);
             expect(spy).toHaveBeenCalledOnce();
             expect(spy).toHaveBeenCalledWith('lorem', 'ipsum', 'dolor sit amet');
         });
@@ -144,9 +110,9 @@ describe('pending-promise-recycler', () => {
                 });
             };
             const spy = vi.fn(func);
-            const cachedFunc = recycle(spy);
-            await expect(cachedFunc()).rejects.toThrow();
-            expect(registry.size).toBe(0);
+            const recyclableFunc = recycle(spy);
+            await expect(recyclableFunc()).rejects.toThrow();
+            expect(recyclableFunc.pendingCount).toBe(0);
         });
 
         it('Handles promises that throw an unhandled rejection error', async () => {
@@ -157,9 +123,9 @@ describe('pending-promise-recycler', () => {
                 });
             };
             const spy = vi.fn(func);
-            const cachedFunc = recycle(spy);
-            await expect(cachedFunc()).rejects.toThrow(err);
-            expect(registry.size).toBe(0);
+            const recyclableFunc = recycle(spy);
+            await expect(recyclableFunc()).rejects.toThrow(err);
+            expect(recyclableFunc.pendingCount).toBe(0);
         });
 
         it('Handles async functions that throw an unhandled rejection error', async () => {
@@ -168,62 +134,207 @@ describe('pending-promise-recycler', () => {
                 throw err;
             };
             const spy = vi.fn(func);
-            const cachedFunc = recycle(spy);
-            await expect(cachedFunc()).rejects.toThrow(err);
-            expect(registry.size).toBe(0);
+            const recyclableFunc = recycle(spy);
+            await expect(recyclableFunc()).rejects.toThrow(err);
+            expect(recyclableFunc.pendingCount).toBe(0);
         });
     });
 
     describe('Key builders', () => {
 
         it('Supports custom key builder functions', async () => {
-            function beforeResolving() {
-                expect(registry.has('lorem')).toBe(true);
-                expect(registry.size).toBe(1);
-            }
-            const spy = vi.fn(testFunctionBuilder('a', { beforeResolving }));
-            const cachedFunc = recycle(spy, {
-                keyBuilder: (_func, ...args) => {
-                    return args[0] as string;
-                }
+            const spy = vi.fn(testFunctionBuilder('a'));
+            const recyclableFunc = recycle(spy, {
+                keyBuilder: (_func, ...args) => args[0] as string
             });
-            const result = await cachedFunc('lorem', 'ipsum', 'dolor sit amet');
-            expect(registry.size).toBe(0);
+            // Two concurrent calls that resolve to the same key should be recycled
+            const [r1, r2] = await Promise.all([
+                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
+                recyclableFunc('lorem', 'ipsum', 'dolor sit amet'),
+            ]);
             expect(spy).toHaveBeenCalledOnce();
-            expect(spy).toHaveBeenCalledWith('lorem', 'ipsum', 'dolor sit amet');
-            expect(result).toBe('Why hello there');
+            expect(recyclableFunc.pendingCount).toBe(0);
+            expect(r1).toBe('Why hello there');
+            expect(r2).toBe('Why hello there');
         });
 
         it('Supports a fixed key value', async () => {
-            function beforeResolving() {
-                expect(registry.has('toothbrush')).toBe(true);
-                expect(registry.size).toBe(1);
-            }
-            const spy = vi.fn(testFunctionBuilder('a', { beforeResolving }));
-            const cachedFunc = recycle(spy, { keyBuilder: 'toothbrush' });
-            const result = await cachedFunc('lorem', 'ipsum', 'dolor sit amet');
-            expect(registry.size).toBe(0);
+            const spy = vi.fn(testFunctionBuilder('a'));
+            const recyclableFunc = recycle(spy, { keyBuilder: 'toothbrush' });
+            const result = await recyclableFunc('lorem', 'ipsum', 'dolor sit amet');
+            expect(recyclableFunc.pendingCount).toBe(0);
             expect(spy).toHaveBeenCalledOnce();
             expect(spy).toHaveBeenCalledWith('lorem', 'ipsum', 'dolor sit amet');
             expect(result).toBe('Why hello there');
         });
 
         it('Works with anonymous functions', async () => {
-            function beforeResolving() {
-                expect(registry.has(
-                    'anonymous-0d0491105dd08721e0911939ca184e9e5a6f924b00dce27a4163ca333049bf20'
-                )).toBe(true);
-                expect(registry.size).toBe(1);
-            }
-            const innerFunc = testFunctionBuilder('', { beforeResolving });
+            const innerFunc = testFunctionBuilder('');
             const spy = vi.fn(innerFunc);
             Object.defineProperty(spy, 'name', { value: innerFunc.name });
-            const cachedFunc = recycle(spy);
-            const result = await cachedFunc('lorem');
-            expect(registry.size).toBe(0);
+            const recyclableFunc = recycle(spy);
+            const result = await recyclableFunc('lorem');
+            expect(recyclableFunc.pendingCount).toBe(0);
             expect(spy).toHaveBeenCalledOnce();
             expect(spy).toHaveBeenCalledWith('lorem');
             expect(result).toBe('Why hello there');
+        });
+    });
+
+    describe('Per-instance registry', () => {
+
+        it('Two recycled functions with the same key do not share promises', async () => {
+            const funcA = vi.fn(testFunctionBuilder('shared', { delay: 50 }));
+            const funcB = vi.fn(testFunctionBuilder('shared', { delay: 50 }));
+            const recyclableA = recycle(funcA, { keyBuilder: 'same-key' });
+            const recyclableB = recycle(funcB, { keyBuilder: 'same-key' });
+
+            // Fire both concurrently
+            const [resultA, resultB] = await Promise.all([recyclableA(), recyclableB()]);
+
+            // Both underlying functions must have been invoked — no cross-instance recycling
+            expect(funcA).toHaveBeenCalledOnce();
+            expect(funcB).toHaveBeenCalledOnce();
+            expect(resultA).toBe('Why hello there');
+            expect(resultB).toBe('Why hello there');
+        });
+
+        it('pendingCount is tracked independently per instance', async () => {
+            const recyclableA = recycle(testFunctionBuilder('a', { delay: 50 }), { keyBuilder: 'key' });
+            const recyclableB = recycle(testFunctionBuilder('b', { delay: 50 }), { keyBuilder: 'key' });
+
+            const pA = recyclableA();
+            expect(recyclableA.pendingCount).toBe(1);
+            expect(recyclableB.pendingCount).toBe(0); // B's registry is unaffected
+
+            const pB = recyclableB();
+            expect(recyclableA.pendingCount).toBe(1);
+            expect(recyclableB.pendingCount).toBe(1);
+
+            await Promise.all([pA, pB]);
+            expect(recyclableA.pendingCount).toBe(0);
+            expect(recyclableB.pendingCount).toBe(0);
+        });
+
+        it('Concurrent calls within an instance are still recycled', async () => {
+            const spy = vi.fn(testFunctionBuilder('a', { delay: 50 }));
+            const recyclableFunc = recycle(spy, { keyBuilder: 'key' });
+
+            const [r1, r2, r3] = await Promise.all([
+                recyclableFunc(), recyclableFunc(), recyclableFunc()
+            ]);
+            expect(spy).toHaveBeenCalledOnce();
+            expect(r1).toBe('Why hello there');
+            expect(r2).toBe('Why hello there');
+            expect(r3).toBe('Why hello there');
+        });
+    });
+
+    describe('TTL', () => {
+
+        it('Removes a never-settling promise from the registry after TTL elapses', () => {
+            vi.useFakeTimers();
+            const neverSettles = vi.fn(() => new Promise(() => {}));
+            const recyclableFunc = recycle(neverSettles, { ttl: 500 });
+
+            recyclableFunc(); // fire and forget
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            vi.advanceTimersByTime(499);
+            expect(recyclableFunc.pendingCount).toBe(1); // not yet
+
+            vi.advanceTimersByTime(1);
+            expect(recyclableFunc.pendingCount).toBe(0); // evicted
+        });
+
+        it('Does not remove a promise that settles before the TTL', async () => {
+            vi.useFakeTimers();
+            const func = vi.fn(testFunctionBuilder('a', { delay: 100 }));
+            const recyclableFunc = recycle(func, { ttl: 500 });
+
+            const promise = recyclableFunc();
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            // Advance past the promise resolution (100ms) but before TTL (500ms)
+            await vi.advanceTimersByTimeAsync(200);
+            expect(recyclableFunc.pendingCount).toBe(0); // settled naturally, not by TTL
+            expect(func).toHaveBeenCalledOnce();
+            await promise; // should already be resolved
+        });
+
+        it('After TTL eviction, a subsequent call creates a fresh promise', () => {
+            vi.useFakeTimers();
+            const neverSettles = vi.fn(() => new Promise(() => {}));
+            const recyclableFunc = recycle(neverSettles, { ttl: 500, keyBuilder: 'key' });
+
+            recyclableFunc();
+            expect(neverSettles).toHaveBeenCalledTimes(1);
+
+            vi.advanceTimersByTime(500); // TTL fires, evicts from registry
+            expect(recyclableFunc.pendingCount).toBe(0);
+
+            recyclableFunc(); // should trigger a brand-new call
+            expect(neverSettles).toHaveBeenCalledTimes(2);
+            expect(recyclableFunc.pendingCount).toBe(1);
+        });
+
+        it('Without a TTL, a never-settling promise stays in the registry indefinitely', () => {
+            vi.useFakeTimers();
+            const neverSettles = vi.fn(() => new Promise(() => {}));
+            const recyclableFunc = recycle(neverSettles); // no TTL
+
+            recyclableFunc();
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            vi.advanceTimersByTime(60_000); // advance 1 minute
+            expect(recyclableFunc.pendingCount).toBe(1); // still there
+        });
+    });
+
+    describe('pendingCount', () => {
+
+        it('Returns 0 when no promises are in flight', () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a'));
+            expect(recyclableFunc.pendingCount).toBe(0);
+        });
+
+        it('Increments when a promise starts and decrements when it settles', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a', { delay: 50 }));
+
+            const promise = recyclableFunc();
+            expect(recyclableFunc.pendingCount).toBe(1);
+
+            await promise;
+            expect(recyclableFunc.pendingCount).toBe(0);
+        });
+
+        it('Counts multiple in-flight promises with different keys', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a', { delay: 50 }));
+
+            const p1 = recyclableFunc('key-1');
+            const p2 = recyclableFunc('key-2');
+            expect(recyclableFunc.pendingCount).toBe(2);
+
+            await Promise.all([p1, p2]);
+            expect(recyclableFunc.pendingCount).toBe(0);
+        });
+
+        it('Does not double-count recycled concurrent calls with the same key', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a', { delay: 50 }));
+
+            const p1 = recyclableFunc('same-key');
+            const p2 = recyclableFunc('same-key'); // recycled
+            expect(recyclableFunc.pendingCount).toBe(1); // only one registry entry
+
+            await Promise.all([p1, p2]);
+            expect(recyclableFunc.pendingCount).toBe(0);
+        });
+
+        it('Decrements correctly even when a promise rejects', async () => {
+            const recyclableFunc = recycle(testFunctionBuilder('a', { isResolved: false }));
+
+            await Promise.allSettled([recyclableFunc()]);
+            expect(recyclableFunc.pendingCount).toBe(0);
         });
     });
 });
